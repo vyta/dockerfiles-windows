@@ -1,29 +1,25 @@
 # escape=`
 FROM microsoft/windowsservercore:1709 AS base
-SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
 WORKDIR /fluentd
 
-RUN Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1')); `
-    choco install -y ruby  --params "'/InstallDir:C:\Ruby'"; `
-    Remove-Item -Recurse -Force C:\Ruby\msys64; `
-    choco install -y msys2 --params "'/NoPath /NoUpdate /InstallDir:C:\Ruby\msys64'"; `
-#    Update-SessionEnvironment; `
-#    choco install -y ruby ruby2.devkit; `
-    $env:Path += ';C:\Ruby\bin;'; `
-    $gemrc_path = ${env:USERPROFILE} + '\gemrc'; `
-    echo 'gem: --no-document' >> $gemrc_path; `
-    gem update --system --no-document; `
-    ridk install 2 3; `
-#    ridk exec pacman -S mingw-w64-x86_64-sqlite3; `
-    gem install oj -v 3.6.3; `
-#    gem install coolio -v 1.5.3 --platform ruby; `
-    gem install json -v 2.1.0; `
-    gem install fluentd -v 1.2.2; 
+RUN powershell -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" 
 
-#FROM microsoft/windowsservercore:1709
-#COPY --from=base ["C:\\opt\\td-agent", "C:\\opt\\td-agent"]
-#
-#COPY fluent.conf /fluent/conf/fluent.conf
+# Fluentd depends on cool.io which is only available for Ruby < 2.5, so need to install Ruby < 2.5 and install msys2 to get dev tools
+RUN choco install -y ruby --version 2.4.2.2 --params "'/InstallDir:C:\'" `
+    && choco install -y msys2 --params "'/NoPath /NoUpdate /InstallDir:C:\ruby24\msys64'" `
+    && refreshenv `
+    && ridk install 2 3 `
+    && gem install oj -v 3.6.3 --no-document `
+    && gem install cool.io -v 1.5.3 --no-document `
+    && gem install json -v 2.1.0 --no-document `
+    && gem install fluentd -v 1.2.2 -i C:\fluentd --no-document
 
-#ENTRYPOINT ["cmd", "/k", "C:\\opt\\td-agent\\embedded\\bin\\fluentd", "-c", "C:\\fluent\\conf\\fluent.conf"]
+RUN powershell -Command "Remove-Item -Recurse -Force C:\ProgramData\chocolatey"
+
+FROM microsoft/windowsservercore:1709
+COPY --from=base ["C:\\fluentd", "C:\\fluentd"]
+
+COPY fluent.conf /fluentd/conf/fluent.conf
+
+ENTRYPOINT ["cmd", "/k", "C:\\fluentd\\bin\\fluentd", "-c", "C:\\fluentd\\conf\\fluent.conf"]
